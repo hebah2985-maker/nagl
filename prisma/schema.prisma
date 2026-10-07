@@ -1,0 +1,172 @@
+// نقل محقق - Source-grounded RAG platform for Islamic sources
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sources      Source[]
+  searches     SearchQuery[]
+  citations    Citation[]
+}
+
+model Source {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Identity
+  title           String
+  author          String?
+  sourceType      String   // tafsir | hadith | fiqh | aqeedah | quran | language | history | general
+  domain          String   @default("general")
+  edition         String?
+  publisher       String?
+  year            Int?
+  language        String   @default("ar")
+  fileName        String
+  filePath        String
+  fileSize        Int?
+  pageCount       Int      @default(0)
+
+  // Trust & Policy
+  trustLevel      String   @default("user_upload") // official | verified | user_upload
+  isOfficial      Boolean  @default(false)
+  organization    String?
+  allowedUsage    String   @default("research") // research | fatwa_restricted | reference_only
+
+  // Status
+  status          String   @default("pending") // pending | processing | indexed | failed
+  isTextExtracted Boolean  @default(false)
+  ocrRequired     Boolean  @default(false)
+  extractionError String?
+
+  // Stats
+  chunkCount      Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  chunks          Chunk[]
+  searches        SearchQuery[]
+  citations       Citation[]
+}
+
+model Chunk {
+  id          String   @id @default(cuid())
+  sourceId    String
+  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  // Location
+  pageNumber  Int
+  chapter     String?
+  section     String?
+  chunkIndex  Int      // order within source
+  startOffset Int?
+  endOffset   Int?
+
+  // Text
+  originalText String
+  ocrText      String?
+  textLength   Int      @default(0)
+  wordCount    Int      @default(0)
+
+  // Search metadata
+  keywords     String?  // comma-separated keywords for quick filtering
+  tags         String?  // comma-separated tags
+
+  // Semantic signature (keywords/topics extracted via LLM)
+  semanticTags String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([pageNumber])
+}
+
+model SearchQuery {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  question    String
+  searchType  String   @default("hybrid") // keyword | semantic | hybrid
+  scopeMode   String   @default("user_library") // this_book | user_library | official
+  sourceIds   String?  // comma-separated selected source IDs
+
+  // Result
+  answer      String?
+  confidence  String?  // high | medium | low | insufficient
+  evidenceCount Int    @default(0)
+  abstained   Boolean  @default(false)
+  abstainReason String?
+
+  createdAt   DateTime @default(now())
+
+  source      Source?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  sourceId    String?
+}
+
+model Citation {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  quotedText      String   // text the user wants to verify
+  sourceId        String
+  source          Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  // Verification result
+  status          String   // matched | partial | not_found
+  matchRatio      Float    @default(0)
+  matchedChunkId  String?
+  matchedText     String?
+  matchedPage     Int?
+  differences     String?  // JSON string of diff
+  isExactMatch    Boolean  @default(false)
+
+  // Note from system
+  note            String?
+
+  createdAt       DateTime @default(now())
+}
+
+model SourcePolicy {
+  id              String   @id @default(cuid())
+  questionType    String   @unique // ayah | hadith | tafsir | fiqh | aqeedah | term | fatwa | general
+  allowedDomains  String   // comma-separated allowed source types
+  requiredFields  String?  // comma-separated required metadata
+  contentLevel    String   @default("B") // A | B | C | D
+  allowDirectAnswer Boolean @default(true)
+  mustShowDiff    Boolean  @default(false)
+  mustShowGrade   Boolean  @default(false)
+  abstainIfNoSource Boolean @default(true)
+  policyNotes     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AnalysisReport {
+  id          String   @id @default(cuid())
+  sourceId    String
+  topic       String   // methodology | israiliyyat | aqeedah | etc
+  summary     String
+  evidenceIds  String   // comma-separated chunk IDs
+  claimCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([sourceId])
+}
